@@ -40,16 +40,7 @@ impl MarginfiGroupFixture {
         {
             let mut ctx = ctx.borrow_mut();
 
-            let accounts = marginfi::accounts::InitializeMarginfiGroup {
-                marginfi_group: group_key.pubkey(),
-                admin: ctx.payer.pubkey(),
-                system_program: system_program::id(),
-            };
-            let init_marginfi_group_ix = Instruction {
-                program_id: marginfi::id(),
-                accounts: accounts.to_account_metas(Some(true)),
-                data: marginfi::instruction::InitializeMarginfiGroup {}.data(),
-            };
+            // Create marginfi group account
             let rent = ctx.banks_client.get_rent().await.unwrap();
             let size = MarginfiGroupFixture::get_size();
             let create_marginfi_group_ix = system_instruction::create_account(
@@ -60,8 +51,35 @@ impl MarginfiGroupFixture {
                 &marginfi::id(),
             );
 
+            // Initialize marginfi group
+            let accounts = marginfi::accounts::InitializeMarginfiGroup {
+                marginfi_group: group_key.pubkey(),
+                admin: ctx.payer.pubkey(),
+                system_program: system_program::id(),
+            };
+            let init_marginfi_group_ix = Instruction {
+                program_id: marginfi::id(),
+                accounts: accounts.to_account_metas(Some(true)),
+                data: marginfi::instruction::InitializeMarginfiGroup {}.data(),
+            };
+
+            // Configure marginfi group
+            let accounts = marginfi::accounts::ConfigureMarginfiGroup {
+                marginfi_group: group_key.pubkey(),
+                admin: ctx.payer.pubkey(),
+            };
+            let configure_marginfi_group_ix = Instruction {
+                program_id: marginfi::id(),
+                accounts: accounts.to_account_metas(Some(true)),
+                data: marginfi::instruction::ConfigureMarginfiGroup { config: config_arg }.data(),
+            };
+
             let tx = Transaction::new_signed_with_payer(
-                &[create_marginfi_group_ix, init_marginfi_group_ix],
+                &[
+                    create_marginfi_group_ix,
+                    init_marginfi_group_ix,
+                    configure_marginfi_group_ix,
+                ],
                 Some(&ctx.payer.pubkey().clone()),
                 &[&ctx.payer, &group_key],
                 ctx.last_blockhash,

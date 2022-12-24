@@ -9,7 +9,7 @@ use fixed::types::I80F48;
 use fixed_macro::types::I80F48;
 use fixtures::prelude::*;
 use marginfi::{
-    prelude::MarginfiError,
+    prelude::{GroupConfig, MarginfiError},
     state::{
         marginfi_account::MarginfiAccount,
         marginfi_group::{BankConfig, BankVaultType},
@@ -79,6 +79,61 @@ async fn success_create_marginfi_account() -> anyhow::Result<()> {
         .balances
         .iter()
         .all(|bank| bank.is_none()));
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn failure_deposit_group_paused() -> anyhow::Result<()> {
+    // Setup test executor with non-admin payer
+    let mut test_f = TestFixture::new(Some(TestSettings {
+        group_config: GroupConfig {
+            paused: Some(false),
+            ..Default::default()
+        },
+        banks: vec![BankSetting {
+            index: 8,
+            mint: BankMint::USDC,
+        }],
+    }))
+    .await;
+
+    let marginfi_account_f = test_f.create_marginfi_account().await;
+
+    let owner = test_f.context.borrow().payer.pubkey();
+    let token_account_f =
+        TokenAccountFixture::new(test_f.context.clone(), &test_f.usdc_mint.key, &owner).await;
+
+    test_f
+        .usdc_mint
+        .mint_to(&token_account_f.key, native!(1_000, "USDC"))
+        .await;
+
+    let res = marginfi_account_f
+        .try_bank_deposit(
+            test_f.usdc_mint.key,
+            token_account_f.key,
+            native!(1_000, "USDC"),
+        )
+        .await;
+    assert!(res.is_ok());
+
+    let marginfi_account = marginfi_account_f.load().await;
+    let marginfi_group = test_f.marginfi_group.load().await;
+
+    // Check balance is active
+    assert!(marginfi_account
+        .lending_account
+        .get_balance(&test_f.usdc_mint.key, &marginfi_group.lending_pool.banks)
+        .is_some());
+    assert_eq!(
+        marginfi_account
+            .lending_account
+            .get_active_balances_iter()
+            .collect::<Vec<_>>()
+            .len(),
+        1
+    );
 
     Ok(())
 }
@@ -471,7 +526,7 @@ async fn liquidation_successful() -> anyhow::Result<()> {
     assert_eq_noise!(
         token_account.amount as i64,
         native!(0.25, "USDC", f64) as i64,
-        1
+        2
     );
 
     Ok(())

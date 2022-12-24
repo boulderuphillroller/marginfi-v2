@@ -23,10 +23,20 @@ use super::marginfi_account::WeightType;
     any(feature = "test", feature = "client"),
     derive(Debug, PartialEq, Eq)
 )]
-#[derive(Default)]
 pub struct MarginfiGroup {
     pub lending_pool: LendingPool,
     pub admin: Pubkey,
+    pub paused: bool,
+}
+
+impl Default for MarginfiGroup {
+    fn default() -> Self {
+        Self {
+            lending_pool: Default::default(),
+            admin: Default::default(),
+            paused: true,
+        }
+    }
 }
 
 impl MarginfiGroup {
@@ -34,6 +44,7 @@ impl MarginfiGroup {
     /// This function validates config values so the group remains in a valid state.
     /// Any modification of group config should happen through this function.
     pub fn configure(&mut self, config: GroupConfig) -> MarginfiResult {
+        set_if_some!(self.paused, config.paused);
         set_if_some!(self.admin, config.admin);
 
         Ok(())
@@ -45,12 +56,18 @@ impl MarginfiGroup {
     #[allow(clippy::too_many_arguments)]
     pub fn set_initial_configuration(&mut self, admin_pk: Pubkey) {
         self.admin = admin_pk;
+        self.paused = true;
     }
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Default)]
+#[cfg_attr(
+    any(feature = "test", feature = "client"),
+    derive(Debug, PartialEq, Eq, Clone)
+)]
 pub struct GroupConfig {
     pub admin: Option<Pubkey>,
+    pub paused: Option<bool>,
 }
 
 const MAX_LENDING_POOL_RESERVES: usize = 128;

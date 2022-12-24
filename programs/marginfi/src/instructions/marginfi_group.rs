@@ -98,12 +98,16 @@ pub fn lending_pool_add_bank(
 pub struct LendingPoolAddBank<'info> {
     #[account(mut)]
     pub marginfi_group: AccountLoader<'info, MarginfiGroup>,
+
     #[account(
         mut,
         address = marginfi_group.load()?.admin,
     )]
     pub admin: Signer<'info>,
+
     pub asset_mint: Box<Account<'info, Mint>>,
+
+    /// CHECK: ⋐ ͡⋄ ω ͡⋄ ⋑
     #[account(
         seeds = [
             LIQUIDITY_VAULT_AUTHORITY_SEED.as_bytes(),
@@ -112,8 +116,8 @@ pub struct LendingPoolAddBank<'info> {
         ],
         bump
     )]
-    /// CHECK: ⋐ ͡⋄ ω ͡⋄ ⋑
     pub liquidity_vault_authority: UncheckedAccount<'info>,
+
     #[account(
         init,
         payer = admin,
@@ -127,6 +131,8 @@ pub struct LendingPoolAddBank<'info> {
         bump,
     )]
     pub liquidity_vault: Box<Account<'info, TokenAccount>>,
+
+    /// CHECK: ⋐ ͡⋄ ω ͡⋄ ⋑
     #[account(
         seeds = [
             INSURANCE_VAULT_AUTHORITY_SEED.as_bytes(),
@@ -135,8 +141,8 @@ pub struct LendingPoolAddBank<'info> {
         ],
         bump
     )]
-    /// CHECK: ⋐ ͡⋄ ω ͡⋄ ⋑
     pub insurance_vault_authority: UncheckedAccount<'info>,
+
     #[account(
         init,
         payer = admin,
@@ -150,6 +156,8 @@ pub struct LendingPoolAddBank<'info> {
         bump,
     )]
     pub insurance_vault: Box<Account<'info, TokenAccount>>,
+
+    /// CHECK: ⋐ ͡⋄ ω ͡⋄ ⋑
     #[account(
         seeds = [
             FEE_VAULT_AUTHORITY_SEED.as_bytes(),
@@ -158,8 +166,8 @@ pub struct LendingPoolAddBank<'info> {
         ],
         bump
     )]
-    /// CHECK: ⋐ ͡⋄ ω ͡⋄ ⋑
     pub fee_vault_authority: UncheckedAccount<'info>,
+
     #[account(
         init,
         payer = admin,
@@ -173,11 +181,15 @@ pub struct LendingPoolAddBank<'info> {
         bump,
     )]
     pub fee_vault: Box<Account<'info, TokenAccount>>,
-    #[account(address = bank_config.pyth_oracle)]
+
     /// CHECK: ⋐ ͡⋄ ω ͡⋄ ⋑
+    #[account(address = bank_config.pyth_oracle)]
     pub pyth_oracle: AccountInfo<'info>,
+
     pub rent: Sysvar<'info, Rent>,
+
     pub token_program: Program<'info, Token>,
+
     pub system_program: Program<'info, System>,
 }
 
@@ -213,10 +225,12 @@ pub fn lending_pool_configure_bank(
 pub struct LendingPoolConfigureBank<'info> {
     #[account(mut)]
     pub marginfi_group: AccountLoader<'info, MarginfiGroup>,
+
     #[account(
         address = marginfi_group.load()?.admin,
     )]
     pub admin: Signer<'info>,
+
     /// Set only if pyth oracle is being changed otherwise can be a random account.
     /// CHECK: ⋐ ͡⋄ ω ͡⋄ ⋑
     pub pyth_oracle: UncheckedAccount<'info>,
@@ -289,6 +303,8 @@ pub fn lending_pool_bank_accrue_interest(
 pub struct LendingPoolBankAccrueInterest<'info> {
     #[account(mut)]
     pub marginfi_group: AccountLoader<'info, MarginfiGroup>,
+
+    /// CHECK: ⋐ ͡⋄ ω ͡⋄ ⋑
     #[account(
         mut,
         seeds = [
@@ -298,8 +314,9 @@ pub struct LendingPoolBankAccrueInterest<'info> {
         ],
         bump
     )]
-    /// CHECK: ⋐ ͡⋄ ω ͡⋄ ⋑
     pub liquidity_vault_authority: UncheckedAccount<'info>,
+
+    /// CHECK: ⋐ ͡⋄ ω ͡⋄ ⋑
     #[account(
         mut,
         seeds = [
@@ -309,8 +326,9 @@ pub struct LendingPoolBankAccrueInterest<'info> {
         ],
         bump
     )]
-    /// CHECK: ⋐ ͡⋄ ω ͡⋄ ⋑
     pub liquidity_vault: UncheckedAccount<'info>,
+
+    /// CHECK: ⋐ ͡⋄ ω ͡⋄ ⋑
     #[account(
         mut,
         seeds = [
@@ -320,8 +338,9 @@ pub struct LendingPoolBankAccrueInterest<'info> {
         ],
         bump
     )]
-    /// CHECK: ⋐ ͡⋄ ω ͡⋄ ⋑
     pub insurance_vault: UncheckedAccount<'info>,
+
+    /// CHECK: ⋐ ͡⋄ ω ͡⋄ ⋑
     #[account(
         mut,
         seeds = [
@@ -331,7 +350,7 @@ pub struct LendingPoolBankAccrueInterest<'info> {
         ],
         bump
     )]
-    /// CHECK: ⋐ ͡⋄ ω ͡⋄ ⋑
     pub fee_vault: UncheckedAccount<'info>,
+
     pub token_program: Program<'info, Token>,
 }

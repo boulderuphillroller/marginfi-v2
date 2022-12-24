@@ -12,6 +12,7 @@ use crate::{
         },
         marginfi_group::{BankVaultType, MarginfiGroup},
     },
+    utils::access_control::group_paused,
 };
 use anchor_lang::prelude::*;
 use anchor_spl::token::{Mint, Token, TokenAccount, Transfer};
@@ -35,10 +36,13 @@ pub fn initialize(ctx: Context<InitializeMarginfiAccount>) -> MarginfiResult {
 #[derive(Accounts)]
 pub struct InitializeMarginfiAccount<'info> {
     pub marginfi_group: AccountLoader<'info, MarginfiGroup>,
+
     #[account(zero)]
     pub marginfi_account: AccountLoader<'info, MarginfiAccount>,
+
     #[account(mut)]
     pub signer: Signer<'info>,
+
     pub system_program: Program<'info, System>,
 }
 
@@ -47,6 +51,7 @@ pub struct InitializeMarginfiAccount<'info> {
 /// 1. Add collateral to the margin accounts lending account
 ///     - Create a bank account if it doesn't exist for the deposited asset
 /// 2. Transfer collateral from signer to bank liquidity vault
+#[access_control(group_paused(&ctx.accounts.marginfi_group))]
 pub fn bank_deposit(ctx: Context<BankDeposit>, amount: u64) -> MarginfiResult {
     let BankDeposit {
         marginfi_group,
@@ -88,20 +93,25 @@ pub struct BankDeposit<'info> {
         address = marginfi_account.load()?.group
     )]
     pub marginfi_group: AccountLoader<'info, MarginfiGroup>,
+
     #[account(mut)]
     pub marginfi_account: AccountLoader<'info, MarginfiAccount>,
+
     #[account(
         mut,
         address = marginfi_account.load()?.owner,
     )]
     pub signer: Signer<'info>,
+
     pub asset_mint: Account<'info, Mint>,
+
+    /// TODO: Store bump on-chain
     #[account(
         mut,
         token::mint = asset_mint,
     )]
     pub signer_token_account: Account<'info, TokenAccount>,
-    /// TODO: Store bump on-chain
+
     #[account(
         mut,
         seeds = [
@@ -112,6 +122,7 @@ pub struct BankDeposit<'info> {
         bump,
     )]
     pub bank_liquidity_vault: Account<'info, TokenAccount>,
+
     pub token_program: Program<'info, Token>,
 }
 
@@ -122,6 +133,7 @@ pub struct BankDeposit<'info> {
 ///     - Create a bank account if it doesn't exist for the deposited asset
 /// 2. Transfer collateral from bank liquidity vault to signer
 /// 3. Verify that the users account is in a healthy state
+#[access_control(group_paused(&ctx.accounts.marginfi_group))]
 pub fn bank_withdraw(ctx: Context<BankWithdraw>, amount: u64) -> MarginfiResult {
     let BankWithdraw {
         marginfi_group: marginfi_group_loader,
@@ -175,16 +187,22 @@ pub struct BankWithdraw<'info> {
         address = marginfi_account.load()?.group
     )]
     pub marginfi_group: AccountLoader<'info, MarginfiGroup>,
+
     #[account(mut)]
     pub marginfi_account: AccountLoader<'info, MarginfiAccount>,
+
     #[account(
         mut,
         address = marginfi_account.load()?.owner,
     )]
     pub signer: Signer<'info>,
+
     pub asset_mint: Account<'info, Mint>,
+
     #[account(mut)]
     pub destination_token_account: Account<'info, TokenAccount>,
+
+    /// CHECK: ⋐ ͡⋄ ω ͡⋄ ⋑
     #[account(
         mut,
         seeds = [
@@ -194,8 +212,8 @@ pub struct BankWithdraw<'info> {
         ],
         bump,
     )]
-    /// CHECK: ⋐ ͡⋄ ω ͡⋄ ⋑
     pub bank_liquidity_vault_authority: AccountInfo<'info>,
+
     #[account(
         mut,
         seeds = [
@@ -206,6 +224,7 @@ pub struct BankWithdraw<'info> {
         bump,
     )]
     pub bank_liquidity_vault: Account<'info, TokenAccount>,
+
     pub token_program: Program<'info, Token>,
 }
 
@@ -248,6 +267,7 @@ pub struct BankWithdraw<'info> {
 /// `q_lf = q_a * p_a * (1 - (f_l + f_i)) / p_l`
 ///
 ///
+#[access_control(group_paused(&ctx.accounts.marginfi_group))]
 pub fn lending_account_liquidate(
     ctx: Context<LendingAccountLiquidate>,
     asset_bank_index: u16,
@@ -433,21 +453,25 @@ pub fn lending_account_liquidate(
 pub struct LendingAccountLiquidate<'info> {
     #[account(mut)]
     pub marginfi_group: AccountLoader<'info, MarginfiGroup>,
+
     #[account(
         mut,
         constraint = liquidator_marginfi_account.load()?.group == marginfi_group.key()
     )]
     pub liquidator_marginfi_account: AccountLoader<'info, MarginfiAccount>,
+
     #[account(
         mut,
         address = liquidator_marginfi_account.load()?.owner
     )]
     pub signer: Signer<'info>,
+
     #[account(
         mut,
         constraint = liquidatee_marginfi_account.load()?.group == marginfi_group.key()
     )]
     pub liquidatee_marginfi_account: AccountLoader<'info, MarginfiAccount>,
+
     #[account(
         mut,
         seeds = [
@@ -458,6 +482,7 @@ pub struct LendingAccountLiquidate<'info> {
         bump
     )]
     pub bank_liquidity_vault_authority: AccountInfo<'info>,
+
     #[account(
         mut,
         seeds = [
@@ -468,6 +493,7 @@ pub struct LendingAccountLiquidate<'info> {
         bump
     )]
     pub bank_liquidity_vault: Account<'info, TokenAccount>,
+
     #[account(
         mut,
         seeds = [

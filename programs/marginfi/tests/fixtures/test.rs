@@ -18,6 +18,24 @@ use std::{cell::RefCell, rc::Rc};
 
 use super::marginfi_account::MarginfiAccountFixture;
 
+#[derive(Debug, Clone)]
+pub enum BankMint {
+    SOL,
+    USDC,
+}
+
+#[derive(Debug, Clone)]
+pub struct BankSetting {
+    pub index: u8,
+    pub mint: BankMint,
+}
+
+#[derive(Debug, Clone)]
+pub struct TestSettings {
+    pub group_config: GroupConfig,
+    pub banks: Vec<BankSetting>,
+}
+
 pub struct TestFixture {
     pub context: Rc<RefCell<ProgramTestContext>>,
     pub marginfi_group: MarginfiGroupFixture,
@@ -43,8 +61,11 @@ lazy_static! {
     };
 }
 
+pub const USDC_MINT_DECIMALS: u8 = 6;
+pub const SOL_MINT_DECIMALS: u8 = 9;
+
 impl TestFixture {
-    pub async fn new(ix_arg: Option<GroupConfig>) -> TestFixture {
+    pub async fn new(test_settings: Option<TestSettings>) -> TestFixture {
         let mut program = ProgramTest::new("marginfi", marginfi::ID, processor!(marginfi::entry));
 
         let usdc_keypair = Keypair::new();
@@ -52,25 +73,53 @@ impl TestFixture {
 
         program.add_account(
             PYTH_USDC_FEED,
-            craft_pyth_price_account(usdc_keypair.pubkey(), 1, 6),
+            craft_pyth_price_account(usdc_keypair.pubkey(), 1, USDC_MINT_DECIMALS.into()),
         );
         program.add_account(
             PYTH_SOL_FEED,
-            craft_pyth_price_account(sol_keypair.pubkey(), 10, 9),
+            craft_pyth_price_account(sol_keypair.pubkey(), 10, SOL_MINT_DECIMALS.into()),
         );
 
         let context = Rc::new(RefCell::new(program.start_with_context().await));
         solana_logger::setup_with_default(RUST_LOG_DEFAULT);
 
         let usdc_mint_f = MintFixture::new(Rc::clone(&context), Some(usdc_keypair), None).await;
-        let sol_mint_f = MintFixture::new(Rc::clone(&context), Some(sol_keypair), Some(9)).await;
+        let sol_mint_f = MintFixture::new(
+            Rc::clone(&context),
+            Some(sol_keypair),
+            Some(SOL_MINT_DECIMALS),
+        )
+        .await;
 
         let tester_group = MarginfiGroupFixture::new(
             Rc::clone(&context),
             &usdc_mint_f.key,
-            ix_arg.unwrap_or(GroupConfig { admin: None }),
+            test_settings
+                .clone()
+                .map(|ts| ts.group_config)
+                .unwrap_or(GroupConfig {
+                    admin: None,
+                    paused: None,
+                }),
         )
         .await;
+
+        if let Some(test_settings) = test_settings.clone() {
+            for bank in test_settings.banks.iter() {
+                let bank_mint = match bank.mint {
+                    BankMint::USDC => &usdc_mint_f,
+                    BankMint::SOL => &sol_mint_f,
+                };
+                tester_group
+                    .try_lending_pool_add_bank(
+                        bank_mint.key,
+                        bank.index.into(),
+                        *DEFAULT_USDC_TEST_BANK_CONFIG,
+                    )
+                    .await
+                    .unwrap()
+            }
+        };
 
         TestFixture {
             context: Rc::clone(&context),

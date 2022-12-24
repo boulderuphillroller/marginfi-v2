@@ -4,6 +4,7 @@ pub mod instructions;
 pub mod macros;
 pub mod prelude;
 pub mod state;
+pub mod utils;
 
 use anchor_lang::prelude::*;
 use instructions::*;
