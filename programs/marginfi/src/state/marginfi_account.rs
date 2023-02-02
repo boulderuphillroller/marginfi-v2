@@ -45,7 +45,7 @@ impl MarginfiAccount {
     }
 }
 
-const EXP_10_I80F48: [I80F48; 15] = [
+pub const EXP_10_I80F48: [I80F48; 15] = [
     I80F48!(1),
     I80F48!(10),
     I80F48!(100),
