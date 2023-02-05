@@ -3,7 +3,7 @@ use crate::{
     profile::{self, get_cli_config_dir, load_profile, CliConfig, Profile},
     utils::{
         create_oracle_key_array, find_bank_vault_authority_pda, find_bank_vault_pda,
-        process_transaction,
+        process_transaction, EXP_10_I80F48,
     },
 };
 use anchor_client::Cluster;
@@ -14,9 +14,12 @@ use fixed::types::I80F48;
 use marginfi::{
     instructions::marginfi_account,
     prelude::{GroupConfig, MarginfiGroup},
-    state::marginfi_group::{
-        Bank, BankConfig, BankConfigOpt, BankOperationalState, BankVaultType, InterestRateConfig,
-        OracleSetup, WrappedI80F48,
+    state::{
+        marginfi_account::MarginfiAccount,
+        marginfi_group::{
+            Bank, BankConfig, BankConfigOpt, BankOperationalState, BankVaultType,
+            InterestRateConfig, OracleSetup, WrappedI80F48,
+        },
     },
 };
 use solana_client::rpc_filter::{Memcmp, MemcmpEncodedBytes, RpcFilterType};
