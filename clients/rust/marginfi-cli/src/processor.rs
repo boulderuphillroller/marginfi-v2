@@ -16,6 +16,7 @@ use anyhow::{anyhow, bail};
 use fixed::types::I80F48;
 use log::info;
 use marginfi::{
+    constants::EMPTY_BALANCE_THRESHOLD,
     instructions::marginfi_account,
     prelude::{GroupConfig, MarginfiGroup},
     state::{
@@ -117,12 +118,12 @@ pub fn group_create(
         .program
         .request()
         .signer(&config.payer)
-        .accounts(marginfi::accounts::MarginfiGroupInitialize {
+        .accounts(marginfi::accounts::InitializeMarginfiGroup {
             marginfi_group: marginfi_group_keypair.pubkey(),
             admin,
             system_program: system_program::id(),
         })
-        .args(marginfi::instruction::MarginfiGroupInitialize {})
+        .args(marginfi::instruction::InitializeMarginfiGroup)
         .instructions()?;
 
     let recent_blockhash = rpc_client.get_latest_blockhash().unwrap();
@@ -160,11 +161,11 @@ pub fn group_configure(config: Config, profile: Profile, admin: Option<Pubkey>) 
         .program
         .request()
         .signer(&config.payer)
-        .accounts(marginfi::accounts::MarginfiGroupConfigure {
+        .accounts(marginfi::accounts::ConfigureMarginfiGroup {
             marginfi_group: profile.marginfi_group.unwrap(),
             admin: config.payer.pubkey(),
         })
-        .args(marginfi::instruction::MarginfiGroupConfigure {
+        .args(marginfi::instruction::ConfigureMarginfiGroup {
             config: GroupConfig { admin },
         })
         .instructions()?;
@@ -620,17 +621,13 @@ pub fn print_account(
         .get_active_balances_iter()
         .for_each(|balance| {
             let bank = banks.get(&balance.bank_pk).expect("Bank not found");
-            let balance_amount = if balance
-                .is_empty(marginfi::state::marginfi_account::BalanceSide::Assets)
-                .not()
-            {
-                let native_value = bank.get_asset_amount(balance.asset_shares.into()).unwrap();
+            let balance_amount = if I80F48::from(balance.deposit_shares) > EMPTY_BALANCE_THRESHOLD {
+                let native_value = bank
+                    .get_deposit_amount(balance.deposit_shares.into())
+                    .unwrap();
 
                 native_value / EXP_10_I80F48[bank.mint_decimals as usize]
-            } else if balance
-                .is_empty(marginfi::state::marginfi_account::BalanceSide::Liabilities)
-                .not()
-            {
+            } else if I80F48::from(balance.liability_shares) > EMPTY_BALANCE_THRESHOLD {
                 let native_value = bank
                     .get_liability_amount(balance.liability_shares.into())
                     .unwrap();
@@ -732,7 +729,7 @@ pub fn marginfi_account_deposit(
 
     let ix = Instruction {
         program_id: config.program_id,
-        accounts: marginfi::accounts::LendingPoolDeposit {
+        accounts: marginfi::accounts::BankDeposit {
             marginfi_group: profile.marginfi_group.unwrap(),
             marginfi_account: marginfi_account_pk,
             signer: config.payer.pubkey(),
@@ -742,7 +739,7 @@ pub fn marginfi_account_deposit(
             token_program: anchor_spl::token::ID,
         }
         .to_account_metas(Some(true)),
-        data: marginfi::instruction::LendingPoolDeposit { amount }.data(),
+        data: marginfi::instruction::BankDeposit { amount }.data(),
     };
 
     let tx = Transaction::new_signed_with_payer(
@@ -795,7 +792,7 @@ pub fn marginfi_account_withdraw(
 
     let mut ix = Instruction {
         program_id: config.program_id,
-        accounts: marginfi::accounts::LendingPoolWithdraw {
+        accounts: marginfi::accounts::BankWithdraw {
             marginfi_group: profile.marginfi_group.unwrap(),
             marginfi_account: marginfi_account_pk,
             signer: config.payer.pubkey(),
@@ -811,11 +808,7 @@ pub fn marginfi_account_withdraw(
             .0,
         }
         .to_account_metas(Some(true)),
-        data: marginfi::instruction::LendingPoolWithdraw {
-            amount,
-            withdraw_all: if withdraw_all { Some(true) } else { None },
-        }
-        .data(),
+        data: marginfi::instruction::BankWithdraw { amount }.data(),
     };
 
     ix.accounts.extend(load_observation_account_metas(
