@@ -16,6 +16,7 @@ use anchor_spl::token::{self, spl_token};
 use anyhow::{anyhow, bail, Result};
 use chrono::{DateTime, NaiveDateTime, Utc};
 use fixed::types::I80F48;
+use fixed_macro::types::I80F48;
 #[cfg(feature = "lip")]
 use liquidity_incentive_program::state::{Campaign, Deposit};
 use log::info;
@@ -111,12 +112,31 @@ pub fn print_group_banks(config: Config, marginfi_group: Pubkey) -> Result<()> {
 }
 
 fn print_bank(address: &Pubkey, bank: &Bank) {
+    let ur = bank
+        .get_liability_amount(bank.total_liability_shares.into())
+        .unwrap()
+        / bank
+            .get_asset_amount(bank.total_asset_shares.into())
+            .unwrap();
+
+    let (lending_rate, borrowing_rate, protocol_fee_rate, insurance_rate) = bank
+        .config
+        .interest_rate_config
+        .calc_interest_rate(ur)
+        .unwrap();
+
     println!(
         r#"
 Bank: {}
 Mint: {},
-Total Deposits: {}
-Total Liabilities: {}
+Total Deposits: {:.3}
+Total Liabilities: {:.3}
+Utilization Ratio: {:.3}%
+Interest Rate
+    Borrowing: {:.3}%
+    Lending: {:.3}%
+    Protocol Fee: {:.3}%
+    Insurance: {:.3}%
 Config:
   State: {:?}
   Asset:
@@ -131,7 +151,7 @@ Config:
   Oracle Setup:
     Type: {:?}
     Keys: {:#?}
-Last Update: {:?}h ago ({})
+Last Update: {} ({}h  ago)
 "#,
         address,
         bank.mint,
@@ -141,6 +161,11 @@ Last Update: {:?}h ago ({})
         bank.get_liability_amount(bank.total_liability_shares.into())
             .unwrap()
             / EXP_10_I80F48[bank.mint_decimals as usize],
+        ur * I80F48!(100),
+        borrowing_rate * I80F48!(100),
+        lending_rate * I80F48!(100),
+        protocol_fee_rate * I80F48!(100),
+        insurance_rate * I80F48!(100),
         bank.config.operational_state,
         bank.config.asset_weight_init,
         bank.config.asset_weight_maint,
@@ -157,12 +182,12 @@ Last Update: {:?}h ago ({})
         bank.config.interest_rate_config.protocol_fixed_fee_apr,
         bank.config.oracle_setup,
         bank.config.oracle_keys,
+        timestamp_to_string(bank.last_update),
         SystemTime::now()
             .duration_since(UNIX_EPOCH + Duration::from_secs(bank.last_update as u64))
             .unwrap()
             .as_secs_f32()
             / 3600_f32,
-        bank.last_update
     )
 }
 
