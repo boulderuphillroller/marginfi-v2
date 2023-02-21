@@ -11,7 +11,7 @@ use clap::{clap_derive::ArgEnum, Parser};
 use fixed::types::I80F48;
 #[cfg(any(feature = "admin", feature = "dev"))]
 use marginfi::state::marginfi_group::BankConfigOpt;
-use marginfi::state::marginfi_group::BankOperationalState;
+use marginfi::state::marginfi_group::{BankOperationalState, InterestRateConfigOpt};
 #[cfg(feature = "dev")]
 use marginfi::{
     prelude::{GroupConfig, MarginfiGroup},
