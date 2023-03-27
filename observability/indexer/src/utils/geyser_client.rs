@@ -23,20 +23,33 @@ impl Interceptor for RequestInterceptor {
         request
             .metadata_mut()
             .insert("x-token", self.auth_token.parse().unwrap());
+
         Ok(request)
     }
 }
 
+#[tracing::instrument(skip(auth_token))]
 pub async fn get_geyser_client(
     url: String,
     auth_token: String,
 ) -> Result<GeyserClient<InterceptedService<Channel, RequestInterceptor>>> {
+    info!("Instantiating geyser client");
     let mut endpoint = Endpoint::from_shared(url.clone())?;
 
     if url.contains("https") {
         endpoint = endpoint.tls_config(ClientTlsConfig::new())?;
+        info!(https = true, "Using https");
     }
-    let channel = endpoint.connect().await.unwrap();
+    let channel = match endpoint.connect().await {
+        Ok(channel) => {
+            info!(success = true);
+            channel
+        }
+        Err(e) => {
+            error!(success = false, error = e.to_string().as_str());
+            return Err(anyhow::Error::new(e));
+        }
+    };
 
     Ok(GeyserClient::with_interceptor(
         channel,

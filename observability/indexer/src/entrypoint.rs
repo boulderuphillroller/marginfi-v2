@@ -12,8 +12,6 @@ use dotenv::dotenv;
 use envconfig::Envconfig;
 use std::{panic, process};
 use tracing::debug;
-use tracing_subscriber::layer::SubscriberExt;
-use tracing_subscriber::EnvFilter;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -59,21 +57,11 @@ pub async fn entry(opts: Opts) -> Result<()> {
     let orig_hook = panic::take_hook();
     panic::set_hook(Box::new(move |panic_info| {
         orig_hook(panic_info);
+        opentelemetry::global::shutdown_tracer_provider();
         process::exit(1);
     }));
 
     dotenv().ok();
-
-    let filter = EnvFilter::from_default_env();
-    let stackdriver = tracing_stackdriver::layer(); // writes to std::io::Stdout
-    let subscriber = tracing_subscriber::registry().with(filter);
-    if opts.global_config.pretty_log {
-        let subscriber = subscriber.with(tracing_subscriber::fmt::layer().compact());
-        tracing::subscriber::set_global_default(subscriber).unwrap();
-    } else {
-        let subscriber = subscriber.with(stackdriver);
-        tracing::subscriber::set_global_default(subscriber).unwrap();
-    };
 
     match opts.command {
         Command::CreateTable {

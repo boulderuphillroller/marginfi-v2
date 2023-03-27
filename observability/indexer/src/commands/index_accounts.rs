@@ -30,6 +30,7 @@ use std::{
     },
     time::Duration,
 };
+use telemetry_rs::init_gce_remote_logger;
 use tonic::Status;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
@@ -91,15 +92,31 @@ impl Context {
 }
 
 pub async fn index_accounts(config: IndexAccountsConfig) -> Result<()> {
+    let client_config = ClientConfig::default().with_auth().await?;
+    let project_id = client_config
+        .project_id
+        .clone()
+        .expect("Project ID not set");
+
+    init_gce_remote_logger!(project_id, "marginfi-v2-index-accounts");
+
     let context = Arc::new(Context::new(&config).await);
 
     let listen_to_updates_handle = tokio::spawn({
         let context = context.clone();
-        async move { listen_to_updates(context).await }
+        async move {
+            loop {
+                listen_to_updates(context.clone()).await
+            }
+        }
     });
     let process_account_updates_handle = tokio::spawn({
         let context = context.clone();
-        async move { push_transactions_to_pubsub(context).await.unwrap() }
+        async move {
+            push_transactions_to_pubsub(context, client_config)
+                .await
+                .unwrap()
+        }
     });
     let monitor_handle = tokio::spawn({
         let context = context.clone();
@@ -117,74 +134,71 @@ pub async fn index_accounts(config: IndexAccountsConfig) -> Result<()> {
 }
 
 async fn listen_to_updates(ctx: Arc<Context>) {
-    loop {
-        info!("Instantiating geyser client");
-        match get_geyser_client(
-            ctx.config.rpc_endpoint.to_string(),
-            ctx.config.rpc_token.to_string(),
-        )
-        .await
-        {
-            Ok(mut geyser_client) => {
-                info!("Subscribing to updates for {:?}", ctx.config.program_id);
-                let stream_request = geyser_client
-                    .subscribe(stream::iter([SubscribeRequest {
-                        accounts: HashMap::from_iter([(
-                            ctx.config.program_id.to_string(),
-                            SubscribeRequestFilterAccounts {
-                                owner: vec![ctx.config.program_id.to_string()],
-                                account: vec![],
-                            },
-                        )]),
-                        slots: HashMap::from_iter([(
-                            "slots".to_string(),
-                            SubscribeRequestFilterSlots {},
-                        )]),
-                        transactions: HashMap::default(),
-                        blocks: HashMap::default(),
-                    }]))
-                    .await;
+    match get_geyser_client(
+        ctx.config.rpc_endpoint.to_string(),
+        ctx.config.rpc_token.to_string(),
+    )
+    .await
+    {
+        Ok(mut geyser_client) => {
+            info!("Subscribing to updates for {:?}", ctx.config.program_id);
+            let stream_request = geyser_client
+                .subscribe(stream::iter([SubscribeRequest {
+                    accounts: HashMap::from_iter([(
+                        ctx.config.program_id.to_string(),
+                        SubscribeRequestFilterAccounts {
+                            owner: vec![ctx.config.program_id.to_string()],
+                            account: vec![],
+                        },
+                    )]),
+                    slots: HashMap::from_iter([(
+                        "slots".to_string(),
+                        SubscribeRequestFilterSlots {},
+                    )]),
+                    transactions: HashMap::default(),
+                    blocks: HashMap::default(),
+                }]))
+                .await;
 
-                match stream_request {
-                    Ok(stream_response) => {
-                        info!("Subscribed to updates");
-                        let mut stream = stream_response.into_inner();
-                        while let Some(received) = stream.next().await {
-                            match received {
-                                Ok(received) => {
-                                    if let Some(update) = received.update_oneof {
-                                        match process_update(ctx.clone(), update) {
-                                            Ok(_) => {}
-                                            Err(err) => {
-                                                error!("Error processing update: {}", err);
-                                                ctx.update_processing_error_count
-                                                    .fetch_add(1, Ordering::Relaxed);
-                                            }
+            match stream_request {
+                Ok(stream_response) => {
+                    info!("Subscribed to updates");
+                    let mut stream = stream_response.into_inner();
+                    while let Some(received) = stream.next().await {
+                        match received {
+                            Ok(received) => {
+                                if let Some(update) = received.update_oneof {
+                                    match process_update(ctx.clone(), update) {
+                                        Ok(_) => {}
+                                        Err(err) => {
+                                            error!("Error processing update: {}", err);
+                                            ctx.update_processing_error_count
+                                                .fetch_add(1, Ordering::Relaxed);
                                         }
                                     }
                                 }
-                                Err(err) => {
-                                    error!("Error pulling next update: {}", err);
-                                    tokio::time::sleep(Duration::from_secs(1)).await;
-                                    break;
-                                }
+                            }
+                            Err(err) => {
+                                error!("Error pulling next update: {}", err);
+                                tokio::time::sleep(Duration::from_secs(1)).await;
+                                break;
                             }
                         }
+                    }
 
-                        error!("Stream got disconnected");
-                        ctx.stream_disconnection_count
-                            .fetch_add(1, Ordering::Relaxed);
-                    }
-                    Err(err) => {
-                        error!("Error establishing geyser sub: {}", err);
-                        tokio::time::sleep(Duration::from_secs(1)).await;
-                    }
+                    error!("Stream got disconnected");
+                    ctx.stream_disconnection_count
+                        .fetch_add(1, Ordering::Relaxed);
+                }
+                Err(err) => {
+                    error!("Error establishing geyser sub: {}", err);
+                    tokio::time::sleep(Duration::from_secs(1)).await;
                 }
             }
-            Err(err) => {
-                error!("Error creating geyser client: {}", err);
-                tokio::time::sleep(Duration::from_secs(1)).await;
-            }
+        }
+        Err(err) => {
+            error!("Error creating geyser client: {}", err);
+            tokio::time::sleep(Duration::from_secs(1)).await;
         }
     }
 }
@@ -247,11 +261,13 @@ fn process_update(ctx: Arc<Context>, update: UpdateOneof) -> Result<()> {
     Ok(())
 }
 
-pub async fn push_transactions_to_pubsub(ctx: Arc<Context>) -> Result<()> {
+pub async fn push_transactions_to_pubsub(
+    ctx: Arc<Context>,
+    pubsub_client_config: ClientConfig,
+) -> Result<()> {
     let topic_name = ctx.config.topic_name.as_str();
 
-    let client_config = ClientConfig::default().with_auth().await?;
-    let client = Client::new(client_config).await?;
+    let client = Client::new(pubsub_client_config).await?;
 
     let topic = client.topic(topic_name);
     topic
